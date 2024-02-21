@@ -10,8 +10,6 @@ website:
         text: Home
       - projects.qmd
     tools:
-      - icon: twitter
-        href: https://twitter.com/
       - icon: github
         href: https://github.com/kabijaoude/KristinsBlog/
   page-footer:
