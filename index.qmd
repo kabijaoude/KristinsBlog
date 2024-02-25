@@ -10,9 +10,15 @@ about:
 
 ## Goals
 
+My goal is to excel in data analytics, starting with R, then hopefully master Python and SQL.
+
 ## Education
 
+UMASS Amherst DACSS masters (2022-present)
+
 ## Experience
+
+¯\_(ツ)_/¯
 
 :::
 
