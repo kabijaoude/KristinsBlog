@@ -12,7 +12,7 @@ website:
         text: "Madoff's Ponzi Scheme"
       - href: post2.qmd
         text: "Money Laundering"
-      - post3.qmd
+      - href: post3.qmd
         text: "Enron's Corruption"
     tools:
       - icon: github
