@@ -1,0 +1,559 @@
+---
+title: "Give All The Money To Me"
+about:
+  id: me
+  template: broadside
+  image: img/profile.png
+---
+
+[Source](http://www.casos.cs.cmu.edu/tools/datasets/external/index.php)
+
+```{r echo=TRUE, message=FALSE}
+library(readr)
+library(igraph)
+library(tidyverse)
+library(statnet)
+library(ggplot2)
+library(dplyr)
+library(intergraph)
+library(network)
+library(ggraph)
+library(sna)
+library(rmarkdown)
+library(tibble)
+```
+
+# Overview and Dataset
+
+```{r}
+madoff.df <- read_csv("MADOFF.csv",
+                      skip=0, # useful if you drop some rows
+                      col_names = TRUE)
+
+class(madoff.df)
+head(madoff.df)
+```
+
+```{r}
+madoff.df <- as_tibble(madoff.df)
+madoff.df <- rename(madoff.df,
+                    "Names" = "...1")
+madoff.df1 <- data.frame(madoff.df, row.names = 1) # make first column row names
+madoff.df1[is.na(madoff.df1)] <- 0 # replace NAs with 0
+madoff.mat <- as.matrix(madoff.df1) # convert to matrix
+
+# finally
+head(madoff.mat)
+```
+
+```{r}
+madoff.ig <- graph_from_adjacency_matrix(madoff.mat, #igraph
+                                         mode = "directed") 
+madoff.stat <- as.network.matrix(madoff.mat) #statnet
+
+# bernie_edge3 <- graph.adjacency(madoff.mat)
+# bernie_edge <- as_edgelist(bernie_edge3)
+
+print(madoff.ig)
+```
+## Basic Network Description
+
+```{r}
+vcount(madoff.ig) # 61 vertices
+
+ecount(madoff.ig) # 61 edges
+
+is_bipartite(madoff.ig) # single mode network
+
+is_directed(madoff.ig) # directed network
+
+is_weighted(madoff.ig) # unweighted network
+```
+
+```{r}
+# display vertex attributes for igraph object
+vertex_attr_names(madoff.ig)
+
+# display edge attributes
+edge_attr_names(madoff.ig)
+```
+
+```{r}
+unique(V(madoff.ig))$name
+```
+
+## Triads and Dyads
+
+```{r}
+# Classify all dyads in the network
+igraph::dyad_census(madoff.ig)
+```
+
+```{r}
+# What about triads?
+igraph::triad_census(madoff.ig)
+
+# total number of all triad types
+sum(sna::triad.census(madoff.stat))
+```
+
+## Transitivity, Distance, and Density
+
+```{r}
+# Get network transitivity: igraph
+transitivity(madoff.ig) # none of the connected triads are transitive
+
+# what element are returned by components
+names(igraph::components(madoff.ig))
+
+# number of components
+igraph::components(madoff.ig)$no
+
+# size of each component
+igraph::components(madoff.ig)$csize 
+
+isolates(madoff.stat)
+```
+```{r}
+# calculate distances between two nodes
+distances(madoff.ig, "Bernard_Madoff_Investment", "Opperheimer_Funds")
+
+distances(madoff.ig, "Bernard_Madoff_Investment", "BNP_Paribas")
+
+distances(madoff.ig, "Bernard_Madoff_Investment", "Capital_Bank_Austria")
+
+distances(madoff.ig, "Bernard_Madoff_Investment", "Bank_Medici")
+```
+
+```{r}
+# list shortest paths between 2 nodes
+all_shortest_paths(madoff.ig, "Bernard_Madoff_Investment", "BNP_Paribas", weights=NA)
+```
+```{r}
+# find average shortest path for network
+# igraph
+average.path.length(madoff.ig, directed=T)
+```
+
+```{r}
+# graph density with igraph
+edge_density(madoff.ig)
+
+# same thing with statnet without loops 
+sna::gden(madoff.stat, diag=FALSE)
+
+# with loops
+sna::gden(madoff.stat, diag=TRUE)
+```
+
+## What Does a Ponzi Scheme Look Like?
+
+```{r}
+gplot(madoff.mat,
+      mode="kamadakawai",
+      gmode="digraph",
+      jitter = F,
+      edge.col="grey30",
+      edge.lwd=1,
+      usecurve=F,
+      edge.curve=.09, # here! 
+      arrowhead.cex=.6,
+      vertex.col="gold",
+      vertex.cex=1.4,
+      displaylabels=TRUE, 
+      label.pos=5,
+      label.cex=.7)
+```
+
+## Centrality
+
+### Vertex Degree and Directed Network
+
+```{r}
+# calculate average network degree: igraph
+igraph::degree(madoff.ig)
+```
+
+
+```{r}
+# calculate average network degree: statnet
+sna::degree(madoff.stat)
+```
+
+```{r}
+# calculate in-degree: statnet
+sna::degree(madoff.stat, cmode = "indegree")
+
+# outdegree: statnet
+sna::degree(madoff.stat, cmode = "outdegree")
+```
+```{r}
+# create a dataset of vertex names and degree: igraph
+madoff.nodes <- data.frame(name = igraph::V(madoff.ig)$name,
+                             degree = igraph::degree(madoff.ig))
+madoff.nodes
+```
+
+```{r}
+madoff.nodes.ig <- madoff.nodes %>%
+  mutate(indegree = igraph::degree(madoff.ig, mode = "in", loops = FALSE),
+         outdegree = igraph::degree(madoff.ig, mode = "out", loops = FALSE))
+
+madoff.nodes.ig
+summary(madoff.nodes.ig)
+```
+
+### Network Centralization
+
+```{r}
+# get network centralization score: igraph
+igraph::centr_degree(madoff.ig, loops = FALSE, mode = "in")$centralization
+
+igraph::centr_degree(madoff.ig, loops = FALSE, mode = "out")$centralization
+```
+
+### High and Low Degree Nodes
+
+```{r}
+madoff.temp <- data.frame(
+  name = madoff.stat %v% "vertex.names",
+  indegree = sna::degree(madoff.stat, cmode = "indegree"),
+  outdegree = sna::degree(madoff.stat, cmode = "outdegree")
+) 
+
+madoff.temp %>%
+  arrange(desc(indegree)) %>%
+  slice(1:5)
+  
+madoff.temp %>%
+  arrange(indegree) %>%
+  slice(1:5)
+
+madoff.temp %>%
+  arrange(outdegree) %>%
+  slice(1:5)
+
+madoff.temp %>%
+  arrange(desc(outdegree)) %>%
+  slice(1:5)
+```
+
+### Bonacich Power Centrality
+
+```{r}
+# calculate bon. power centrality for nodes: igraph
+head(igraph::power_centrality(madoff.ig))
+```
+### Closeness Centrality and Closeness Centralization
+
+```{r}
+head(igraph::closeness(madoff.ig))
+```
+```{r}
+centralization(madoff.stat, sna::closeness, mode = "graph")
+```
+
+### Betweeness Centrality
+
+```{r}
+# calcalte betweenness centrality: igraph
+igraph::betweenness(madoff.ig, directed = FALSE)
+```
+
+### Betweeness Centralization
+
+```{r}
+igraph::centr_betw(madoff.ig, directed = FALSE)$centralization
+```
+
+### Network Constraint (Burt)
+
+```{r}
+igraph::constraint(madoff.ig)
+```
+
+## Communities
+
+### Fast and Greedy Community Detection
+
+```{r echo=TRUE}
+# run clustering algorithm: fast_greedy
+# works with undirected graphs only
+madoff.undirected <- as.undirected(madoff.ig, mode="collapse")
+madoff.fg <- igraph::cluster_fast_greedy(madoff.undirected)
+
+# inspect clustering object
+names(madoff.fg)
+madoff.fg
+``` 
+```{r}
+# list of nodes in communities
+igraph::groups(madoff.fg)
+```
+
+### Inspect Community Density
+
+```{r echo=TRUE}
+# blockmodel with community membership
+blockmodel(madoff.stat, madoff.fg$membership)
+```
+```{r echo=TRUE}
+# only retrieve block density object
+blockmodel(madoff.stat, madoff.fg$membership)$block.model
+```
+```{r echo=TRUE}
+print(blockmodel(madoff.stat, madoff.fg$membership)$block.model,
+      digits = 2)
+```
+### Adding Community Membership to node Info
+
+```{r echo=TRUE}
+# inspect community membership vector
+madoff.fg$membership
+# compare to vertex names vector
+madoff.fg$names
+
+# membership function
+igraph::membership(madoff.fg)
+```
+
+```{r}
+# add community membership as a node attribute
+madoff.nodes$madoff.fg <- madoff.fg$membership
+# summarize node statistics by community
+madoff.nodes %>%
+  select(-name) %>%
+  group_by(madoff.fg) %>%
+  mutate(n = n()) %>%
+  summarise_all(mean, na.rm = TRUE) %>%
+  as.matrix() %>%
+  print(digits = 2)
+```
+
+```{r}
+madoff.nodes.by.gp <- function(madoff.nodes, groupvar){
+  madoff.nodes %>%
+  select(-name) %>%
+  group_by(.data[[groupvar]]) %>%
+  mutate(n=n()) %>%
+  summarise_all(mean, na.rm=TRUE) %>%
+  as.matrix() %>%
+  print(digits=2)
+}
+
+nodes.by.gp(madoff.nodes, "madoff.fg")
+```
+### Plot the Network with Community Colors
+
+```{r echo=TRUE}
+# plot network with community coloring
+plot(madoff.fg, madoff.ig)
+```
+### Walktrap Community Detection
+
+```{r echo=TRUE}
+# run clustering algorithm: walktrap
+madoff.wt <- igraph::walktrap.community(madoff.ig)
+# inspect community membership
+igraph::groups(madoff.wt)
+```
+
+```{r}
+# run and inspect clustering algorithm: 10 steps
+igraph::groups(igraph::walktrap.community(madoff.ig, steps = 10))
+```
+
+```{r echo=TRUE}
+# inspect density of between/within community ties
+print(blockmodel(madoff.stat,
+                 madoff.wt$membership)$block.model, digits = 2)
+```
+
+```{r echo=TRUE}
+# add community membership as a vertex attribute
+madoff.nodes$madoff.wt <- madoff.wt$membership
+# summarize node statistics by community
+nodes.by.gp(madoff.nodes, "madoff.wt")
+```
+```{r echo=TRUE}
+plot(madoff.wt, madoff.ig)
+```
+
+### Compare Community Partitions
+
+```{r echo=TRUE}
+# compare community partition modularity scores
+igraph::modularity(madoff.fg)
+
+igraph::modularity(madoff.wt)
+```
+
+```{r echo=TRUE}
+# collect modularity scores to compare
+madoff.mods <- c(fastgreedy = igraph::modularity(madoff.fg),
+                 walktrap = igraph::modularity(madoff.wt))
+madoff.mods
+
+compare.algs(alg.a = "madoff.fg", alg.b = "madoff.wt")
+```
+### Leading Label Propagation Community Detection
+
+```{r echo=TRUE}
+# run clustering algorithm: leading label
+madoff.lab <- igraph::cluster_label_prop(madoff.ig)
+# inspect community membership
+igraph::groups(madoff.lab)
+```
+```{r echo=TRUE}
+# inspect density of between/within community ties
+print(blockmodel(madoff.stat, madoff.lab$membership)$block.model,
+      digits = 2)
+```
+```{r echo=TRUE}
+# add community membership as a vertex attribute
+madoff.nodes$madoff.lab <- madoff.lab$membership
+# summarize node statistics by community
+nodes.by.gp(madoff.nodes, "madoff.lab")
+```
+
+```{r echo=TRUE}
+plot(madoff.lab, madoff.ig)
+```
+
+### Edgness Between Communities
+
+```{r}
+# run clustering algorithm: edge betweenness
+madoff.edge <- igraph::cluster_edge_betweenness(madoff.ig)
+# inspect community membership
+igraph::groups(madoff.edge)
+```
+```{r}
+# inspect density of between/within community ties
+print(blockmodel(madoff.stat, madoff.edge$membership)$block.model,
+      digits = 2)
+```
+```{r}
+# add community membership as a vertex attribute
+madoff.nodes$madoff.edge <- madoff.edge$membership
+#summarize node statistics by community
+nodes.by.gp(madoff.nodes, "madoff.edge")
+```
+
+```{r echo=TRUE}
+plot(madoff.edge, madoff.ig)
+```
+### Spinglass Community Detection
+
+
+```{r echo=TRUE}
+giant.component <- function(graph){
+  cl <- igraph::clusters(graph)
+  igraph::induced_subgraph(graph, which(cl$membership == which.max(cl$csize)))
+}
+
+# extract giant component
+madoff.giant <- giant.component(madoff.ig)
+madoff.giant
+
+# run clustering algorithm: spinglass
+madoff.spin <- igraph::spinglass.community(madoff.giant)
+# inspect community membership
+igraph::groups(madoff.spin)
+```
+
+```{r echo=TRUE}
+# inspect density of betweenness/within community ties
+print(blockmodel(madoff.stat, madoff.spin$membership)$block.model, digits=2)
+```
+
+```{r echo=TRUE}
+# add community membership as a vertex attribute
+madoff.nodes$madoff.spin[which(madoff.nodes$name %in% igraph::V(madoff.giant)$name)] <- madoff.spin$membership
+
+# summarize node statistics by community
+nodes.by.gp(madoff.nodes, "madoff.spin")
+```
+
+```{r echo=TRUE}
+plot(madoff.spin, madoff.ig)
+```
+## Positions
+
+### Calculate Structural Equivalence
+
+```{r}
+# calculate equivalence frame specified distance matrix
+madoff.se <- equiv.clust(madoff.stat,
+                          equiv.fun = "sedist",
+                          method = "hamming", 
+                          mode = "graph")
+madoff.se
+summary(madoff.se)
+
+# with average cluster.method
+madoff.avg.se <- equiv.clust(madoff.stat, 
+                              equiv.fun="sedist",
+                              cluster.method = "average",
+                              method = "hamming",
+                              mode="graph")
+
+# plot
+plot(madoff.avg.se, labels = madoff.se$glabels)
+```
+
+```{r}
+# with single cluster.method
+madoff.avg.se <- equiv.clust(madoff.stat, 
+                              equiv.fun="sedist",
+                              cluster.method = "single",
+                              method = "hamming",
+                              mode="graph")
+
+# plot
+plot(madoff.avg.se, labels = madoff.se$glabels)
+```
+
+```{r}
+# with ward.D cluster.method
+madoff.avg.se <- equiv.clust(madoff.stat, 
+                              equiv.fun="sedist",
+                              cluster.method = "ward.D",
+                              method = "hamming",
+                              mode="graph")
+
+# plot
+plot(madoff.avg.se, labels = madoff.se$glabels)
+```
+### Partition a Matrix Using Clustering
+
+```{r}
+# plot equivalence clustering
+plot(madoff.se, labels = madoff.se$glabels)
+
+# partition the clusters
+# run the following code with the above plot function simultaneously
+rect.hclust(madoff.se$cluster, h = 5)
+```
+
+### Plot Network Roles
+
+```{r}
+# blockmodel and select partitions
+blk_mod <- blockmodel(madoff.stat, madoff.se, k=5)
+# assign block membership to vertex attribute
+madoff.stat%v%"role" <- blk_mod$block.membership[match(madoff.stat%v%"vertex.names",
+                                                     blk_mod$plabels)]
+
+# plot network using "role" to color nodes: statnet and GGally
+GGally::ggnet2(madoff.stat,
+               node.color = "role",
+               node.size = degree(madoff.mat),
+               node.label = "vertex.names",
+               node.alpha = .5)
+
+```
+
+# Conclusion and Limitations
+
+

@@ -1,0 +1,379 @@
+---
+title: "The Fall of Enron: People of Interest"
+about:
+  id: me
+  template: broadside
+  image: img/profile.png
+---
+
+```{r echo=TRUE, message=FALSE}
+library(readr)
+library(igraph)
+library(tidyverse)
+library(statnet)
+library(ggplot2)
+library(dplyr)
+library(intergraph)
+library(network)
+library(ggraph)
+library(sna)
+library(rmarkdown)
+library(tibble)
+library(stringr)
+```
+
+# Overview and Dataset
+
+
+
+```{r}
+enron.df <- list.files("maildir/", full.names=T, recursive=T)
+enron.df <- enron.df[grep("/inbox", enron.df)]
+length(enron.df)
+```
+
+```{r}
+# Create list of sender and receiver (inbox owner)
+inboxes <- data.frame(
+  from=apply(as.data.frame(enron.df), 1, function(x){readLines(x, warn=F)[3]}),
+  to=enron1, 
+  stringsAsFactors=F
+  )
+
+# Keep only enron.com and strip all but username
+inboxes <- inboxes[grepl("@enron.com", inboxes$from),]
+inboxes$from <- str_sub(inboxes$from, 7, nchar(inboxes$from)-10)
+to <- str_split(inboxes$to, "/")
+inboxes$to <- sapply(to, "[", 3)
+
+# Create username list
+users <- data.frame(user=paste0("maildir/", unique(inboxes$to)))
+
+# Remove those without sent mails
+sent <- apply(users, 1, function(x){sum(grepl("sent", dir(x)))})
+users <- subset(users, !sent==0) 
+
+# Replace username with e-mail name
+users$mailname <- NA
+for (i in 1:nrow(users)){
+  sentmail <- dir(paste0(users$user[i], "/sent_items/"))
+  name <- readLines(paste0(users$user[i], "/sent_items/", sentmail[1]), warn=F)[3]
+  name <- str_sub(name, 7, nchar(name)-10)
+  users$mailname[i] <- name
+}
+users$user <- str_sub(users$user, 9)
+inboxes <- merge(inboxes, by.x="to", users, by.y="user")
+inboxes <- data.frame(from=inboxes$from, to=inboxes$mailname)
+
+inboxes$from <- as.character(inboxes$from)
+inboxes$to <- as.character(inboxes$to)
+
+# Only e-mails between inbox users
+inboxes <- inboxes[inboxes$from %in% inboxes$to,]
+
+# Remove no.address
+inboxes <- subset(inboxes, from!="no.address" & to!="no.address")
+
+# Remove mail to self
+inboxes<- subset(inboxes, inboxes$from!=inboxes$to)
+
+# Define network
+enron.ig <- graph_from_edgelist(as.matrix(inboxes), directed=T)
+# enron_coms <- cluster_spinglass(enron.inbox)
+
+# summary 
+class(enron.ig) # igraph
+enron.ig
+```
+
+## Basic Network Descriptors
+
+```{r}
+vcount(enron.ig) # 131 vertices
+
+ecount(enron.ig) # 2779 edges
+
+is_bipartite(enron.ig) # single mode network
+
+is_directed(enron.ig) # directed network
+
+is_weighted(enron.ig) #unweighted
+```
+
+```{r}
+# as matrix
+enron.mat <- as_adjacency_matrix(enron.ig, type = "both", sparse = FALSE)
+
+# as statnet
+enron.stat <- as.network.matrix(enron.mat)
+```
+
+```{r}
+# display vertex attributes for igraph object
+vertex_attr_names(enron.ig)
+
+# display edge attributes
+edge_attr_names(enron.ig)
+```
+
+## Triads and Dyads
+
+```{r}
+# Classify all dyads in the network
+igraph::dyad_census(enron.ig)
+```
+```{r}
+# What about triads?
+igraph::triad_census(enron.ig)
+```
+
+```{r}
+# total number of all triad types
+sum(sna::triad.census(enron.stat))
+```
+
+## Transitivity
+
+```{r}
+# Get network transitivity: global vs average
+transitivity(enron.ig, type = "global")
+
+transitivity(enron.ig, type = "average")
+```
+
+## Path Length and Geodesic
+
+```{r}
+average.path.length(enron.ig, directed=T)
+```
+
+```{r}
+par(mar=c(0,0,0,0))
+gplot(enron.mat, 
+      gmode="digraph", # directed!
+      coord=NULL,
+      edge.col="grey30",
+      edge.lwd= 1,
+      arrowhead.cex=.6, # edge head size
+      vertex.col="blue", 
+      vertex.cex=1.4,
+      displaylabels=TRUE, 
+      label.pos=5,
+      label.cex=.7)
+```
+
+
+## Component Structure and Membership
+
+```{r}
+# what element are returned by components
+names(igraph::components(enron.ig))
+```
+
+```{r}
+igraph::components(enron.ig)$no # number of components
+```
+
+```{r}
+igraph::components(enron.ig)$csize # Size of each component
+```
+
+```{r}
+# isolates
+isolates(enron.stat)
+```
+
+## Density
+
+```{r}
+graph.density(enron.ig)
+```
+
+## Vertex Degree
+
+```{r}
+# calculate average network degree: igraph
+igraph::degree(enron.ig)
+```
+
+## Degree in Directed Network
+
+```{r}
+# create a dataset of vertex names and degree: statnet
+enron.nodes <- data.frame(name = enron.stat %v% "vertex.names",
+                            degree = sna::degree(enron.stat))
+
+enron.nodes
+```
+
+```{r}
+# calculate in-degree: statnet
+sna::degree(enron.stat, cmode = "indegree")
+```
+```{r}
+# outdegree: statnet
+sna::degree(enron.stat, cmode = "outdegree")
+```
+```{r echo=TRUE, message = FALSE}
+# statnet version:
+library(tidyverse)
+enron.nodes <- enron.nodes %>%
+  mutate(indegree = sna::degree(enron.stat, cmode = "indegree"),
+         outdegree = sna::degree(enron.stat, cmode = "outdegree"))
+enron.nodes
+# get summary statistics for node attributes
+summary(enron.nodes)
+```
+## Network Degree Distribution
+
+```{r echo=TRUE}
+# create a histogram of Enron Influence Indegree
+hist(enron.nodes$indegree,
+     main = "Enron Corruption: In-degree Distribution",
+     xlab = "Nomiantions Received")
+```
+
+```{r echo=TRUE}
+# create a histogram of Enron Influence Outdegree
+hist(enron.nodes$outdegree,
+     main = "Enron Corruption: Out-degree Distribution",
+     xlab = "Nominations made")
+```
+## Network Degree Centralization
+
+```{r echo=TRUE}
+# get network centralization score
+igraph::centr_degree(enron.ig, loops = FALSE, mode = "in")$centralization # 0.7347337
+
+igraph::centr_degree(enron.ig, loops = FALSE, mode = "out")$centralization # 1.29284
+```
+
+## Identifying Specific Nodes
+
+```{r echo=TRUE}
+# sort to find 5 highest and lowest degree nodes in trade100
+temp1 <- data.frame(
+  name = enron.stat %v% "vertex.names",
+  indegree = sna::degree(enron.stat, cmode = "indegree"),
+  outdegree = sna::degree(enron.stat, cmode = "outdegree")
+) 
+
+temp1 %>%
+  arrange(indegree) %>%
+  slice(1:5)
+
+temp1 %>%
+  arrange(outdegree) %>%
+  slice(1:5)
+```
+## Eigenvector Centrality
+
+```{r echo=TRUE}
+# calculate eigenvector centrality scores: igraph
+enron.ev <- igraph::centr_eigen(enron.ig, directed = T)
+
+names(enron.ev)
+
+length(enron.ev$vector)
+
+head(enron.ev$vector)
+
+head(enron.ev$centralization)
+```
+
+## Calculating closeness centrality
+
+```{r echo=TRUE}
+# calculate closeness centrality: igraph
+head(igraph::closeness(enron.ig))
+```
+
+## Calculate Betweenness Centrality
+
+```{r echo=TRUE}
+head(igraph::betweenness(enron.ig, directed = FALSE, weights=NA))
+```
+
+## Betweenness Centralization
+
+```{r echo=TRUE}
+# calculate betweenness centralization index: igraph
+igraph::centr_betw(enron.ig, directed = FALSE)$centralization
+```
+
+## Calculate Network Constraint (Burt)
+
+```{r echo=TRUE}
+igraph::constraint(enron.ig)
+```
+## Walktrap Community Detection
+
+```{r}
+# run clustering algorithm: walktrap
+enron.wt <- igraph::walktrap.community(enron.ig)
+
+# run and inspect clustering algorithm: 10 steps
+igraph::groups(igraph::walktrap.community(enron.ig, steps = 10))
+```
+```{r echo=TRUE}
+# add community membership as a vertex attribute
+enron.nodes$enron.wt <- enron.wt$membership
+
+nodes.by.gp <- function(network.nodes, groupvar){
+  network.nodes %>%
+  select(-name) %>%
+  group_by(.data[[groupvar]]) %>%
+  mutate(n=n()) %>%
+  summarise_all(mean, na.rm=TRUE) %>%
+  as.matrix() %>%
+  print(digits=2)
+}
+
+# summarize node statistics by community
+nodes.by.gp(enron.nodes, "enron.wt")
+```
+
+Finally, let's try plotting the network with walktrap community coloring.
+
+```{r echo=TRUE}
+plot(comm.wt, enron.ig)
+```
+
+```{r}
+enron.edge <- igraph::cluster_edge_betweenness(enron.ig)
+# inspect community membership
+igraph::groups(enron.edge)
+```
+```{r}
+# add community membership as a vertex attribute
+enron.nodes$enron.edge <- enron.edge$membership
+#summarize node statistics by community
+nodes.by.gp(enron.nodes, "enron.edge")
+```
+```{r}
+plot(enron.edge, enron.ig)
+```
+
+```{r echo=TRUE}
+# run clustering algorithm: leading eigenvector
+enron.eigen <- igraph::leading.eigenvector.community(enron.ig)
+# inspect community membership
+igraph::groups(enron.eigen)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
