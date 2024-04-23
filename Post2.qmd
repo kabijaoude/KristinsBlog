@@ -1,0 +1,244 @@
+---
+title: "Don't Wash the Money"
+about:
+  id: me
+  template: broadside
+  image: img/profile.png
+---
+
+```{r echo=TRUE, message=FALSE}
+library(readr)
+library(igraph)
+library(tidyverse)
+library(statnet)
+library(ggplot2)
+library(dplyr)
+library(intergraph)
+library(network)
+library(ggraph)
+library(sna)
+library(rmarkdown)
+library(tibble)
+```
+
+[source](https://www.kaggle.com/datasets/anshankul/ibm-amlsim-example-dataset/data)
+
+# Open Dataset
+
+```{r}
+aml.df <- read_csv("transactions_sample.csv")
+```
+
+```{r}
+aml.edge <- aml.df %>%
+  group_by(SENDER_ACCOUNT_ID, RECEIVER_ACCOUNT_ID) %>%
+  summarise(agg_txn_count = n(), agg_txn_amt = sum(TX_AMOUNT, na.rm = TRUE)) %>%
+  ungroup()
+colnames(aml.edge) <- c("source", "target", "agg_txn_count", "agg_txn_amt")
+
+dim(aml.edge)
+class(aml.edge)
+head(aml.edge)
+```
+# Basic Network Description
+
+```{r}
+aml.edge.ig <- graph_from_data_frame(aml.edge, directed=FALSE)
+class(aml.edge.ig)
+print(aml.edge.ig) # show non-exhaustive list of edges
+```
+```{r}
+# as matrix
+aml.edge.mat <- as_adjacency_matrix(aml.edge.ig,
+                                      type = c("both", "upper", "lower"),
+                                      attr = NULL,
+                                      edges = FALSE,
+                                      names = TRUE,
+                                      sparse = igraph_opt("sparsematrices"))
+
+# as statnet object
+aml.edge.stat <- as.network.matrix(aml.edge.mat)
+print(aml.edge.stat)
+```
+
+```{r}
+vcount(aml.edge.ig) # 108 vertices
+
+ecount(aml.edge.ig) # 108 edges
+
+is_bipartite(aml.edge.ig) # single mode network
+
+is_directed(aml.edge.ig) # undirected network
+
+is_weighted(aml.edge.ig) #unweighted 
+```
+
+```{r}
+# display vertex attributes
+vertex_attr_names(aml.edge.ig)
+```
+
+```{r}
+# display edge attributes
+edge_attr_names(aml.edge.ig)
+```
+
+## Dyads and Triads
+
+```{r}
+# Classify all dyads in the network
+igraph::dyad_census(aml.edge.ig)
+```
+```{r}
+# What about triads in the network
+igraph::triad_census(aml.edge.ig)
+```
+## Transitivity
+
+```{r}
+# Get network transitivity: igraph
+transitivity(aml.edge.ig) # none of the connected triads are transitive
+
+# what element are returned by components
+names(igraph::components(aml.edge.ig))
+
+# number of components
+igraph::components(aml.edge.ig)$no
+
+# size of each component
+igraph::components(aml.edge.ig)$csize 
+
+isolates(aml.edge.stat)
+```
+
+```{r echo=TRUE}
+# get the number of components: igraph
+igraph::components(aml.edge.ig)$no # number of components
+
+# get the size of each component
+igraph::components(aml.edge.ig)$csize # size of each component
+```
+
+```{r}
+# get global clustering coefficient:
+# igraph
+mean_distance(aml.edge.ig, directed=T)
+
+# edge/ network density
+edge_density(aml.edge.ig)
+```
+
+# What does Money Laundering Look Like? 
+
+```{r}
+plot(aml.edge.ig,
+     gmode = "graph",
+     main = "The Money Flow AML Version",
+     edge.arrow.size=.1,
+     vertex.size=5, 
+     vertex.frame.color="black",
+     margin=-.2,
+     vertex.label = NA)
+```
+
+## Vertex Degree
+
+```{r}
+# calculate average network degree: igraph
+igraph::degree(aml.edge.ig)
+
+# create a dataset of vertex names and degree: statnet
+aml.nodes <- data.frame(name = aml.edge.stat %v% "vertex.names",
+                            degree = sna::degree(aml.edge.stat))
+
+aml.nodes
+```
+
+## Eigenvector Centrality
+
+```{r}
+head(sna::evcent(aml.edge.stat, ignore.eval = TRUE))
+```
+
+```{r echo=TRUE}
+aml.nodes$eigen <- sna::evcent(aml.edge.stat)
+
+# arrange descending and return top 5 nodes
+arrange(aml.nodes,
+        desc(eigen)) %>%
+  slice(1:5)
+```
+## Bonacich Power Centrality
+
+```{r echo=TRUE}
+# calculate bon. power centrality for nodes: igraph
+head(igraph::power_centrality(aml.edge.ig))
+```
+
+## Calculating closeness centrality
+
+```{r}
+# calculate closenes centrality: statnet
+head(sna::closeness(aml.edge.stat,
+                    gmode = "graph",
+                    cmode = "suminvundir",
+                    ignore.eval = FALSE))
+```
+
+## Closeness Centralization
+
+```{r echo=TRUE}
+# calcualte closeness centralization index: igraph
+igraph::centr_clo(aml.edge.ig)$centralization
+```
+
+## Calculate Betweenness Centrality
+
+```{r echo=TRUE}
+head(igraph::betweenness(aml.edge.ig, directed = FALSE, weights=NA))
+```
+
+## Betweenness Centralization
+
+```{r echo=TRUE}
+# calculate betweenness centralization: statnet
+sna::centralization(aml.edge.stat, sna::betweenness,
+                    mode = "graph")
+```
+
+## Calculate Network Constraint (Burt)
+
+```{r echo=TRUE}
+# calculate betweenness centralization: statnet
+head(igraph::constraint(aml.edge.ig))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
