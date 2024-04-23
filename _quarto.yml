@@ -8,7 +8,12 @@ website:
     left:
       - href: index.qmd
         text: Home
-      - projects.qmd
+      - href: post1.qmd
+        text: "Madoff's Ponzi Scheme"
+      - href: post2.qmd
+        text: "Money Laundering"
+      - post3.qmd
+        text: "Enron's Corruption"
     tools:
       - icon: github
         href: https://github.com/kabijaoude/KristinsBlog/
